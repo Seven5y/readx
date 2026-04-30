@@ -222,14 +222,15 @@ func parseOPF(zr *zip.ReadCloser, opfPath string) (*opfData, error) {
 	return opf, nil
 }
 
-// tagStripRe matches HTML/XML tags for removal.
-var tagStripRe = regexp.MustCompile(`<[^>]*>`)
+// Patterns used by extractHTMLText.
+var (
+	tagStripRe  = regexp.MustCompile(`<[^>]*>`)
+	brRe        = regexp.MustCompile(`<br\s*/?>`)
+	blockCloseRe = regexp.MustCompile(`</?(?:p|div|h[1-6]|tr|li|blockquote|section|article|pre|hr)\s*/?>`)
+)
 
-
-// extractHTMLText reads an HTML file from the ZIP and returns plain text.
-// Uses simple regex-based tag stripping — sufficient for most EPUBs.
-// Known limitation: nested tags, CDATA sections, and HTML comments may
-// produce artifacts. A future enhancement could switch to golang.org/x/net/html.
+// extractHTMLText reads an HTML file from the ZIP and returns plain text
+// with paragraph structure preserved for the pagination beautification.
 func extractHTMLText(zr *zip.ReadCloser, path string) (string, error) {
 	f, err := zr.Open(path)
 	if err != nil {
@@ -244,14 +245,24 @@ func extractHTMLText(zr *zip.ReadCloser, path string) (string, error) {
 
 	text := string(data)
 
-	// Strip HTML tags.
+	// Convert block-level tags to newlines to preserve paragraph boundaries.
+	text = brRe.ReplaceAllString(text, "\n")
+	text = blockCloseRe.ReplaceAllString(text, "\n")
+
+	// Strip remaining inline tags (replace with space to avoid word concatenation).
 	text = tagStripRe.ReplaceAllString(text, " ")
 
-	// Decode HTML entities like &amp; &lt; &#12345;
+	// Decode HTML entities.
 	text = html.UnescapeString(text)
 
-	// Collapse whitespace.
-	text = strings.Join(strings.Fields(text), " ")
+	// Collapse whitespace per-line, preserving blank lines as paragraph separators.
+	rawLines := strings.Split(text, "\n")
+	var lines []string
+	for _, line := range rawLines {
+		line = strings.Join(strings.Fields(line), " ")
+		lines = append(lines, line)
+	}
+	text = strings.Join(lines, "\n")
 	text = strings.TrimSpace(text)
 
 	return text, nil
