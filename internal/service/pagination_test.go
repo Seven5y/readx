@@ -72,7 +72,7 @@ func TestWrapText_ShortLine(t *testing.T) {
 
 func TestPaginate_EmptyChapter(t *testing.T) {
 	ch := &domain.Chapter{Index: 0, Title: "Empty", RawContent: ""}
-	pages := Paginate(ch, 80, 24, true)
+	pages := Paginate(ch, 80, 24)
 
 	if len(pages) != 1 {
 		t.Fatalf("expected 1 page (empty placeholder), got %d", len(pages))
@@ -92,7 +92,7 @@ func TestPaginate_PageCount(t *testing.T) {
 	text := strings.Join(lines, "\n")
 
 	ch := &domain.Chapter{Index: 0, Title: "Test", RawContent: text}
-	pages := Paginate(ch, 80, 24, true)
+	pages := Paginate(ch, 80, 24)
 
 	if len(pages) != 5 {
 		t.Errorf("expected 5 pages (99 lines / 20 per page), got %d", len(pages))
@@ -103,27 +103,18 @@ func TestPaginate_PageCount(t *testing.T) {
 }
 
 func TestContentArea(t *testing.T) {
-	// Sidebar visible: width = 100*0.8 - 4 = 76.
-	w, h := ContentArea(100, 30, true)
-	if w != 76 {
-		t.Errorf("width with sidebar = %d, want 76", w)
+	// width = 100 - 4 = 96, height = 30 - 3 - 1 = 26.
+	w, h := ContentArea(100, 30)
+	if w != 96 {
+		t.Errorf("width = %d, want 96", w)
 	}
 	if h != 26 {
 		t.Errorf("height = %d, want 26", h)
 	}
-
-	// Sidebar hidden: width = 100 - 4 = 96.
-	w2, h2 := ContentArea(100, 30, false)
-	if w2 != 96 {
-		t.Errorf("width without sidebar = %d, want 96", w2)
-	}
-	if h2 != 26 {
-		t.Errorf("height = %d, want 26", h2)
-	}
 }
 
 func TestContentArea_Minimum(t *testing.T) {
-	w, h := ContentArea(10, 5, true)
+	w, h := ContentArea(10, 5)
 	if w < 20 {
 		t.Errorf("width should be clamped to 20, got %d", w)
 	}

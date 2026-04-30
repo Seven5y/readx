@@ -18,9 +18,9 @@ import (
 
 // paginateChapterCmd is a bubbletea.Cmd that paginates a chapter and returns
 // the result wrapped in a paginateDoneMsg.
-func paginateChapterCmd(reader domain.Reader, cache *service.PageCache, chapterIndex, termW, termH int, showSidebar bool) tea.Cmd {
+func paginateChapterCmd(reader domain.Reader, cache *service.PageCache, chapterIndex, termW, termH int) tea.Cmd {
 	return func() tea.Msg {
-		pages, err := service.PaginateOrCache(cache, reader, chapterIndex, termW, termH, showSidebar)
+		pages, err := service.PaginateOrCache(cache, reader, chapterIndex, termW, termH)
 		if err != nil {
 			return paginateErrMsg{err}
 		}
@@ -56,7 +56,6 @@ type Model struct {
 
 	showPopup   bool
 	popupMsg    string
-	showSidebar bool
 
 	showChapters  bool // chapter list modal visible
 	chapterCursor int  // highlighted chapter index in modal
@@ -80,7 +79,6 @@ func NewModel(reader domain.Reader, config *persistence.Config, chapterTitles []
 		chapterTitles: chapterTitles,
 		curChapter:    0,
 		curPage:       0,
-		showSidebar:   true,
 		config:        config,
 		bookPath:      reader.GetBook().Path,
 	}
@@ -182,7 +180,7 @@ func (m *Model) View() string {
 		}
 	}
 
-	body := BodyView(m.chapterTitles, m.curChapter, page, m.showSidebar, m.termWidth, m.termHeight)
+	body := BodyView(page, m.termWidth, m.termHeight)
 	footer := FooterView(m.curChapter, m.reader.GetTotalChapters(), m.curPage, m.numPages, m.termWidth)
 
 	return header + "\n" + body + "\n" + footer
@@ -208,7 +206,7 @@ func (m *Model) Cleanup() {
 
 // repaginate triggers async pagination for the current chapter.
 func (m *Model) repaginate() tea.Cmd {
-	return paginateChapterCmd(m.reader, m.cache, m.curChapter, m.termWidth, m.termHeight, m.showSidebar)
+	return paginateChapterCmd(m.reader, m.cache, m.curChapter, m.termWidth, m.termHeight)
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -268,11 +266,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "tab":
 		m.showChapters = true
 		m.chapterCursor = m.curChapter
-
-	case "s":
-		m.showSidebar = !m.showSidebar
-		m.cache.Evict(m.curChapter)
-		return m, m.repaginate()
 	}
 
 	return m, nil

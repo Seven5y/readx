@@ -33,20 +33,7 @@ var FooterStyle = lipgloss.NewStyle().
 	Background(MutedBg).
 	Padding(0, 1)
 
-// SidebarStyle is for the chapter list panel (left 20%).
-var SidebarStyle = lipgloss.NewStyle().
-	Foreground(Secondary).
-	Background(MutedBg).
-	Padding(0, 1)
-
-// SidebarHighlight is for the currently selected chapter in the sidebar.
-var SidebarHighlight = lipgloss.NewStyle().
-	Foreground(Accent).
-	Background(MutedBg).
-	Bold(true).
-	Padding(0, 1)
-
-// ContentStyle is for the main text reading area (right 80%).
+// ContentStyle is for the main text reading area.
 var ContentStyle = lipgloss.NewStyle().
 	Foreground(Primary).
 	Background(MutedBg).
@@ -67,11 +54,6 @@ var PopupStyle = lipgloss.NewStyle().
 
 // PopupPrompt is for the Y/N text inside the popup.
 var PopupPrompt = lipgloss.NewStyle().
-	Foreground(Accent).
-	Bold(true)
-
-// HelpKeyStyle highlights key names in the footer help text.
-var HelpKeyStyle = lipgloss.NewStyle().
 	Foreground(Accent).
 	Bold(true)
 

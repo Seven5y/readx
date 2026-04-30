@@ -14,7 +14,7 @@ func FooterView(currentChapter, totalChapters, currentPage, totalPages int, widt
 		width = 20
 	}
 
-	help := "↑/↓翻页  ←/→章节  s侧栏  tab目录  q退出"
+	help := "↑/↓翻页  ←/→章节  tab目录  q退出"
 
 	progress := calcProgress(currentChapter, totalChapters, currentPage, totalPages)
 	rightText := progressBar(progress, 12)
