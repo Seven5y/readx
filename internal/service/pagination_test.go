@@ -83,8 +83,8 @@ func TestPaginate_EmptyChapter(t *testing.T) {
 }
 
 func TestPaginate_PageCount(t *testing.T) {
-	// 50 paragraphs → 50 indented + 49 separators = 99 lines.
-	// contentHeight = 24 - 3 - 1 = 20, so 99 lines ÷ 20 = 5 pages.
+	// 50 paragraphs → 50 indented lines (no inter-paragraph separator).
+	// contentHeight = 24 - 3 - 1 = 20, so 50 lines ÷ 20 = 3 pages.
 	var lines []string
 	for i := 0; i < 50; i++ {
 		lines = append(lines, "x")
@@ -94,11 +94,11 @@ func TestPaginate_PageCount(t *testing.T) {
 	ch := &domain.Chapter{Index: 0, Title: "Test", RawContent: text}
 	pages := Paginate(ch, 80, 24)
 
-	if len(pages) != 5 {
-		t.Errorf("expected 5 pages (99 lines / 20 per page), got %d", len(pages))
+	if len(pages) != 3 {
+		t.Errorf("expected 3 pages (50 lines / 20 per page), got %d", len(pages))
 	}
-	if pages[0].TotalInChapter != 5 {
-		t.Errorf("TotalInChapter = %d, want 5", pages[0].TotalInChapter)
+	if pages[0].TotalInChapter != 3 {
+		t.Errorf("TotalInChapter = %d, want 3", pages[0].TotalInChapter)
 	}
 }
 

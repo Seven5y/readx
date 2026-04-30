@@ -121,25 +121,17 @@ func wrapText(text string, maxWidth int) []string {
 
 	var lines []string
 	paragraphs := strings.Split(text, "\n")
-	lastWasContent := false
 
 	for _, para := range paragraphs {
 		para = strings.TrimRight(para, " \t")
 		if para == "" {
 			lines = append(lines, "")
-			lastWasContent = false
 			continue
-		}
-
-		// Blank line separator between consecutive non-empty paragraphs.
-		if lastWasContent {
-			lines = append(lines, "")
 		}
 
 		// First-line indent: two full-width spaces.
 		indented := "　　" + para
 		lines = append(lines, wrapSingleLine(indented, maxWidth)...)
-		lastWasContent = true
 	}
 
 	return lines
