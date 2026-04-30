@@ -1,0 +1,14 @@
+# Compiled binary
+/readx
+
+# Claude
+.claude/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
