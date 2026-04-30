@@ -2,26 +2,26 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 )
 
 // FooterView renders the bottom status bar.
-// Left side: key help text. Right side: reading progress percentage.
+// Left side: key help text. Right side: character-style progress bar.
 func FooterView(currentChapter, totalChapters, currentPage, totalPages int, width int) string {
 	if width < 20 {
 		width = 20
 	}
 
-	// Build help text with highlighted keys.
-	help := "↑/↓ page  ←/→ chapter  tab sidebar  q quit"
+	help := "↑/↓翻页  ←/→章节  s侧栏  tab目录  q退出"
 
-	// Calculate overall progress percentage.
 	progress := calcProgress(currentChapter, totalChapters, currentPage, totalPages)
-	rightText := fmt.Sprintf("%d%%", progress)
+	rightText := progressBar(progress, 12)
 
-	// Left-align help, right-align progress.
-	leftSide := FooterStyle.Width(width - len(rightText) - 2).Render(help)
+	// Left-align help, right-align progress bar.
+	rightW := lipgloss.Width(rightText)
+	leftSide := FooterStyle.Width(width - rightW).Render(help)
 	rightSide := FooterStyle.Align(lipgloss.Right).Render(rightText)
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, leftSide, rightSide)
@@ -50,4 +50,17 @@ func calcProgress(curCh, totalCh, curPage, totalPages int) int {
 		p = 100
 	}
 	return p
+}
+
+// progressBar renders a character-style progress bar: [████░░░░░░] 40%.
+func progressBar(pct int, length int) string {
+	if length < 2 {
+		length = 2
+	}
+	filled := pct * length / 100
+	if filled > length {
+		filled = length
+	}
+	bar := strings.Repeat("█", filled) + strings.Repeat("░", length-filled)
+	return fmt.Sprintf("[%s] %d%%", bar, pct)
 }

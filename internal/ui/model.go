@@ -18,9 +18,9 @@ import (
 
 // paginateChapterCmd is a bubbletea.Cmd that paginates a chapter and returns
 // the result wrapped in a paginateDoneMsg.
-func paginateChapterCmd(reader domain.Reader, cache *service.PageCache, chapterIndex, termW, termH int) tea.Cmd {
+func paginateChapterCmd(reader domain.Reader, cache *service.PageCache, chapterIndex, termW, termH int, showSidebar bool) tea.Cmd {
 	return func() tea.Msg {
-		pages, err := service.PaginateOrCache(cache, reader, chapterIndex, termW, termH)
+		pages, err := service.PaginateOrCache(cache, reader, chapterIndex, termW, termH, showSidebar)
 		if err != nil {
 			return paginateErrMsg{err}
 		}
@@ -57,6 +57,9 @@ type Model struct {
 	showPopup   bool
 	popupMsg    string
 	showSidebar bool
+
+	showChapters  bool // chapter list modal visible
+	chapterCursor int  // highlighted chapter index in modal
 
 	ready bool
 
@@ -110,11 +113,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.termWidth = msg.Width
 		m.termHeight = msg.Height
 		if m.ready {
-			return m, paginateChapterCmd(m.reader, m.cache, m.curChapter, m.termWidth, m.termHeight)
+			return m, m.repaginate()
 		}
-		// First WindowSizeMsg: trigger initial pagination with real dimensions.
 		m.ready = true
-		return m, paginateChapterCmd(m.reader, m.cache, m.curChapter, m.termWidth, m.termHeight)
+		return m, m.repaginate()
 
 	case paginateDoneMsg:
 		m.ready = true
@@ -149,6 +151,11 @@ func (m *Model) View() string {
 	// Popup overlay takes priority.
 	if m.showPopup {
 		return PopupView(m.popupMsg, m.termWidth, m.termHeight)
+	}
+
+	// Chapter list modal replaces the screen.
+	if m.showChapters {
+		return ChapterListView(m.chapterTitles, m.chapterCursor, m.termWidth, m.termHeight)
 	}
 
 	// Build the main layout.
@@ -199,28 +206,50 @@ func (m *Model) Cleanup() {
 // Key handling
 // ---------------------------------------------------------------------------
 
+// repaginate triggers async pagination for the current chapter.
+func (m *Model) repaginate() tea.Cmd {
+	return paginateChapterCmd(m.reader, m.cache, m.curChapter, m.termWidth, m.termHeight, m.showSidebar)
+}
+
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Popup mode: only respond to Y/N.
+	// Tier 1: Popup mode — only respond to Y/N.
 	if m.showPopup {
 		switch msg.String() {
 		case "y", "Y":
 			m.showPopup = false
-			// Saved progress already applied in constructor; repaginate.
-			return m, paginateChapterCmd(m.reader, m.cache, m.curChapter, m.termWidth, m.termHeight)
+			return m, m.repaginate()
 		case "n", "N":
 			m.showPopup = false
 			m.curChapter = 0
 			m.curPage = 0
-			return m, paginateChapterCmd(m.reader, m.cache, 0, m.termWidth, m.termHeight)
-		default:
-			return m, nil
+			return m, m.repaginate()
 		}
+		return m, nil
 	}
 
+	// Tier 2: Chapter list modal mode.
+	if m.showChapters {
+		switch msg.String() {
+		case "up", "k":
+			if m.chapterCursor > 0 {
+				m.chapterCursor--
+			}
+		case "down", "j":
+			if m.chapterCursor < len(m.chapterTitles)-1 {
+				m.chapterCursor++
+			}
+		case "enter":
+			return m.gotoChapter(m.chapterCursor)
+		case "esc", "tab":
+			m.showChapters = false
+		}
+		return m, nil
+	}
+
+	// Tier 3: Normal reading mode.
 	switch msg.String() {
 
 	case "q":
-		// Save progress and quit.
 		m.Cleanup()
 		return m, tea.Quit
 
@@ -237,11 +266,29 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.nextChapter()
 
 	case "tab":
+		m.showChapters = true
+		m.chapterCursor = m.curChapter
+
+	case "s":
 		m.showSidebar = !m.showSidebar
-		return m, nil
+		m.cache.Evict(m.curChapter)
+		return m, m.repaginate()
 	}
 
 	return m, nil
+}
+
+// gotoChapter jumps to the target chapter, resets page to 0, closes the
+// chapter modal, and triggers pagination for the new chapter.
+func (m *Model) gotoChapter(targetChapter int) (tea.Model, tea.Cmd) {
+	if targetChapter == m.curChapter {
+		m.showChapters = false
+		return m, nil
+	}
+	m.curChapter = targetChapter
+	m.curPage = 0
+	m.showChapters = false
+	return m, m.repaginate()
 }
 
 // ---------------------------------------------------------------------------
@@ -257,7 +304,7 @@ func (m *Model) prevPage() (tea.Model, tea.Cmd) {
 	// At first page of current chapter — jump to prev chapter's last page.
 	if m.curChapter > 0 {
 		m.curChapter--
-		return m, paginateChapterCmd(m.reader, m.cache, m.curChapter, m.termWidth, m.termHeight)
+		return m, m.repaginate()
 	}
 
 	return m, nil
@@ -273,7 +320,7 @@ func (m *Model) nextPage() (tea.Model, tea.Cmd) {
 	if m.curChapter < m.reader.GetTotalChapters()-1 {
 		m.curChapter++
 		m.curPage = 0
-		return m, paginateChapterCmd(m.reader, m.cache, m.curChapter, m.termWidth, m.termHeight)
+		return m, m.repaginate()
 	}
 
 	return m, nil
@@ -283,7 +330,7 @@ func (m *Model) prevChapter() (tea.Model, tea.Cmd) {
 	if m.curChapter > 0 {
 		m.curChapter--
 		m.curPage = 0
-		return m, paginateChapterCmd(m.reader, m.cache, m.curChapter, m.termWidth, m.termHeight)
+		return m, m.repaginate()
 	}
 	return m, nil
 }
@@ -292,7 +339,7 @@ func (m *Model) nextChapter() (tea.Model, tea.Cmd) {
 	if m.curChapter < m.reader.GetTotalChapters()-1 {
 		m.curChapter++
 		m.curPage = 0
-		return m, paginateChapterCmd(m.reader, m.cache, m.curChapter, m.termWidth, m.termHeight)
+		return m, m.repaginate()
 	}
 	return m, nil
 }

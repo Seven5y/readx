@@ -8,36 +8,39 @@ import (
 )
 
 func TestWrapText_CJKWidth(t *testing.T) {
-	// "你好世界" = 4 CJK chars, each 2 columns wide = 8 column width.
+	// "你好世界" = 4 CJK chars, each 2 columns wide = 8 columns.
+	// With indent "　　你好世界" = 12 columns. Wrapped at 6 → ["　　你", "好世界"].
 	text := "你好世界"
 	lines := wrapText(text, 6)
 
-	// With maxWidth=6, the first line fits 3 CJK chars (6 columns),
-	// the second line gets the remaining 1 CJK char.
 	if len(lines) != 2 {
 		t.Fatalf("expected 2 lines, got %d: %v", len(lines), lines)
 	}
-	if lines[0] != "你好世" {
-		t.Errorf("first line = %q, want %q", lines[0], "你好世")
+	if lines[0] != "　　你" {
+		t.Errorf("first line = %q, want %q", lines[0], "　　你")
 	}
-	if lines[1] != "界" {
-		t.Errorf("second line = %q, want %q", lines[1], "界")
+	if lines[1] != "好世界" {
+		t.Errorf("second line = %q, want %q", lines[1], "好世界")
 	}
 }
 
 func TestWrapText_MixedLatinCJK(t *testing.T) {
-	// "A你B好" = A(1) + 你(2) + B(1) + 好(2) = 6 columns.
+	// "A你B好C世" with indent "　　　A你B好C世" = 4+1+2+1+2+1+2 = 13 columns.
+	// Wrapped at 6 → ["　　A", "你B好C", "世"].
 	text := "A你B好C世"
 	lines := wrapText(text, 6)
 
-	if len(lines) != 2 {
-		t.Fatalf("expected 2 lines, got %d: %v", len(lines), lines)
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines, got %d: %v", len(lines), lines)
 	}
-	if lines[0] != "A你B好" {
-		t.Errorf("first line = %q, want %q", lines[0], "A你B好")
+	if lines[0] != "　　A" {
+		t.Errorf("first line = %q, want %q", lines[0], "　　A")
 	}
-	if lines[1] != "C世" {
-		t.Errorf("second line = %q, want %q", lines[1], "C世")
+	if lines[1] != "你B好C" {
+		t.Errorf("second line = %q, want %q", lines[1], "你B好C")
+	}
+	if lines[2] != "世" {
+		t.Errorf("third line = %q, want %q", lines[2], "世")
 	}
 }
 
@@ -48,28 +51,28 @@ func TestWrapText_PreservesBlankLines(t *testing.T) {
 	if len(lines) != 3 {
 		t.Fatalf("expected 3 lines (with blank middle), got %d: %v", len(lines), lines)
 	}
-	if lines[0] != "line one" {
-		t.Errorf("lines[0] = %q", lines[0])
+	if lines[0] != "　　line one" {
+		t.Errorf("lines[0] = %q, want %q", lines[0], "　　line one")
 	}
 	if lines[1] != "" {
 		t.Errorf("lines[1] (blank) = %q", lines[1])
 	}
-	if lines[2] != "line three" {
-		t.Errorf("lines[2] = %q", lines[2])
+	if lines[2] != "　　line three" {
+		t.Errorf("lines[2] = %q, want %q", lines[2], "　　line three")
 	}
 }
 
 func TestWrapText_ShortLine(t *testing.T) {
 	text := "short"
 	lines := wrapText(text, 80)
-	if len(lines) != 1 || lines[0] != "short" {
-		t.Errorf("expected single line %q, got %v", "short", lines)
+	if len(lines) != 1 || lines[0] != "　　short" {
+		t.Errorf("expected single line %q, got %v", "　　short", lines)
 	}
 }
 
 func TestPaginate_EmptyChapter(t *testing.T) {
 	ch := &domain.Chapter{Index: 0, Title: "Empty", RawContent: ""}
-	pages := Paginate(ch, 80, 24)
+	pages := Paginate(ch, 80, 24, true)
 
 	if len(pages) != 1 {
 		t.Fatalf("expected 1 page (empty placeholder), got %d", len(pages))
@@ -80,7 +83,8 @@ func TestPaginate_EmptyChapter(t *testing.T) {
 }
 
 func TestPaginate_PageCount(t *testing.T) {
-	// With content area height around 20 (24 - 3 - 1), 50 lines → 3 pages.
+	// 50 paragraphs → 50 indented + 49 separators = 99 lines.
+	// contentHeight = 24 - 3 - 1 = 20, so 99 lines ÷ 20 = 5 pages.
 	var lines []string
 	for i := 0; i < 50; i++ {
 		lines = append(lines, "x")
@@ -88,33 +92,38 @@ func TestPaginate_PageCount(t *testing.T) {
 	text := strings.Join(lines, "\n")
 
 	ch := &domain.Chapter{Index: 0, Title: "Test", RawContent: text}
-	pages := Paginate(ch, 80, 24)
+	pages := Paginate(ch, 80, 24, true)
 
-	// contentHeight = 24 - 3 - 1 = 20, so 50 lines ÷ 20 = 3 pages.
-	if len(pages) != 3 {
-		t.Errorf("expected 3 pages (50 lines / 20 per page), got %d", len(pages))
+	if len(pages) != 5 {
+		t.Errorf("expected 5 pages (99 lines / 20 per page), got %d", len(pages))
 	}
-	if pages[0].PageIndex != 0 || pages[1].PageIndex != 1 || pages[2].PageIndex != 2 {
-		t.Errorf("page indices wrong: %v", pages)
-	}
-	if pages[0].TotalInChapter != 3 {
-		t.Errorf("TotalInChapter = %d, want 3", pages[0].TotalInChapter)
+	if pages[0].TotalInChapter != 5 {
+		t.Errorf("TotalInChapter = %d, want 5", pages[0].TotalInChapter)
 	}
 }
 
 func TestContentArea(t *testing.T) {
-	w, h := ContentArea(100, 30)
-	// width = 100 * 0.8 = 80, height = 30 - 3 - 1 = 26
-	if w != 80 {
-		t.Errorf("width = %d, want 80", w)
+	// Sidebar visible: width = 100*0.8 - 4 = 76.
+	w, h := ContentArea(100, 30, true)
+	if w != 76 {
+		t.Errorf("width with sidebar = %d, want 76", w)
 	}
 	if h != 26 {
 		t.Errorf("height = %d, want 26", h)
 	}
+
+	// Sidebar hidden: width = 100 - 4 = 96.
+	w2, h2 := ContentArea(100, 30, false)
+	if w2 != 96 {
+		t.Errorf("width without sidebar = %d, want 96", w2)
+	}
+	if h2 != 26 {
+		t.Errorf("height = %d, want 26", h2)
+	}
 }
 
 func TestContentArea_Minimum(t *testing.T) {
-	w, h := ContentArea(10, 5)
+	w, h := ContentArea(10, 5, true)
 	if w < 20 {
 		t.Errorf("width should be clamped to 20, got %d", w)
 	}

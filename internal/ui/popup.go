@@ -38,3 +38,46 @@ func PopupView(message string, width, height int) string {
 		popup,
 	)
 }
+
+// ChapterListView renders a centered modal dialog listing all chapters
+// for navigation. The current cursor position is highlighted.
+func ChapterListView(titles []string, cursor, width, height int) string {
+	if width < 40 {
+		width = 40
+	}
+	if height < 10 {
+		height = 10
+	}
+
+	viewportH := height - 8
+	if viewportH < 3 {
+		viewportH = 3
+	}
+
+	start, end := visibleWindow(len(titles), cursor, viewportH)
+
+	var items []string
+	if len(titles) == 0 {
+		items = append(items, ChapterListItem.Render(" (no chapters)"))
+	} else {
+		for i := start; i < end; i++ {
+			line := truncateToWidth(titles[i], 36)
+			if i == cursor {
+				items = append(items, ChapterListItemHighlight.Render(" "+line+" "))
+			} else {
+				items = append(items, ChapterListItem.Render(" "+line+" "))
+			}
+		}
+	}
+
+	for len(items) < viewportH {
+		items = append(items, ChapterListItem.Render(""))
+	}
+
+	titleLine := ChapterModalTitleStyle.Render("[ 章节目录 ]")
+	inner := lipgloss.JoinVertical(lipgloss.Top, titleLine, "", lipgloss.JoinVertical(lipgloss.Top, items...))
+
+	modal := ChapterModalStyle.Render(inner)
+
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, modal)
+}

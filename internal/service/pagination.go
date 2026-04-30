@@ -39,6 +39,11 @@ func (pc *PageCache) Set(chapterIndex int, pages []domain.Page) {
 	pc.pages[chapterIndex] = pages
 }
 
+// Evict removes a single chapter from the cache.
+func (pc *PageCache) Evict(chapterIndex int) {
+	delete(pc.pages, chapterIndex)
+}
+
 // EvictExcept removes all cached entries except the given indices.
 func (pc *PageCache) EvictExcept(keep ...int) {
 	keepSet := make(map[int]bool, len(keep))
@@ -54,8 +59,15 @@ func (pc *PageCache) EvictExcept(keep ...int) {
 
 // ContentArea returns the width and height available for rendering the
 // text content area (right panel) based on terminal dimensions.
-func ContentArea(termWidth, termHeight int) (width, height int) {
-	contentWidth := int(float64(termWidth) * (1 - sidebarRatio))
+// When showSidebar is false, the content uses the full terminal width.
+// The -4 accounts for ContentStyle Padding(0,2): 2 left + 2 right columns.
+func ContentArea(termWidth, termHeight int, showSidebar bool) (width, height int) {
+	var contentWidth int
+	if showSidebar {
+		contentWidth = int(float64(termWidth)*(1-sidebarRatio)) - 4
+	} else {
+		contentWidth = termWidth - 4
+	}
 	contentHeight := termHeight - headerHeight - footerHeight
 	if contentWidth < 20 {
 		contentWidth = 20
@@ -68,8 +80,8 @@ func ContentArea(termWidth, termHeight int) (width, height int) {
 
 // Paginate splits a chapter's text into pages that fit within the content area.
 // It accounts for CJK character width (2 columns) via go-runewidth.
-func Paginate(chapter *domain.Chapter, termWidth, termHeight int) []domain.Page {
-	contentWidth, contentHeight := ContentArea(termWidth, termHeight)
+func Paginate(chapter *domain.Chapter, termWidth, termHeight int, showSidebar bool) []domain.Page {
+	contentWidth, contentHeight := ContentArea(termWidth, termHeight, showSidebar)
 	lines := wrapText(chapter.RawContent, contentWidth)
 
 	// Check if all lines are effectively empty.
@@ -112,23 +124,34 @@ func Paginate(chapter *domain.Chapter, termWidth, termHeight int) []domain.Page 
 
 // wrapText wraps text to fit within the given display width, correctly
 // accounting for CJK characters that occupy 2 columns.
+// Non-empty paragraphs receive a first-line indent (two full-width spaces)
+// and consecutive non-empty paragraphs are separated by a blank line.
 func wrapText(text string, maxWidth int) []string {
 	if maxWidth <= 0 {
 		return nil
 	}
 
 	var lines []string
-
-	// Split by existing newlines first, then wrap each paragraph.
 	paragraphs := strings.Split(text, "\n")
+	lastWasContent := false
+
 	for _, para := range paragraphs {
 		para = strings.TrimRight(para, " \t")
 		if para == "" {
 			lines = append(lines, "")
+			lastWasContent = false
 			continue
 		}
 
-		lines = append(lines, wrapSingleLine(para, maxWidth)...)
+		// Blank line separator between consecutive non-empty paragraphs.
+		if lastWasContent {
+			lines = append(lines, "")
+		}
+
+		// First-line indent: two full-width spaces.
+		indented := "　　" + para
+		lines = append(lines, wrapSingleLine(indented, maxWidth)...)
+		lastWasContent = true
 	}
 
 	return lines
@@ -170,7 +193,7 @@ func wrapSingleLine(text string, maxWidth int) []string {
 // PaginateOrCache returns pages for a chapter, using the cache if available
 // or computing and caching new pages. It also evicts chapters that are not
 // current, prev, or next.
-func PaginateOrCache(cache *PageCache, reader domain.Reader, chapterIndex int, termWidth, termHeight int) ([]domain.Page, error) {
+func PaginateOrCache(cache *PageCache, reader domain.Reader, chapterIndex int, termWidth, termHeight int, showSidebar bool) ([]domain.Page, error) {
 	if cached := cache.Get(chapterIndex); cached != nil {
 		return cached, nil
 	}
@@ -180,14 +203,14 @@ func PaginateOrCache(cache *PageCache, reader domain.Reader, chapterIndex int, t
 		return nil, err
 	}
 
-	pages := Paginate(ch, termWidth, termHeight)
+	pages := Paginate(ch, termWidth, termHeight, showSidebar)
 	cache.Set(chapterIndex, pages)
 
 	// Pre-fetch adjacent chapters into cache.
 	for _, adj := range []int{chapterIndex - 1, chapterIndex + 1} {
 		if adj >= 0 && adj < reader.GetTotalChapters() && cache.Get(adj) == nil {
 			if adjCh, err := reader.GetChapter(adj); err == nil {
-				cache.Set(adj, Paginate(adjCh, termWidth, termHeight))
+				cache.Set(adj, Paginate(adjCh, termWidth, termHeight, showSidebar))
 			}
 		}
 	}

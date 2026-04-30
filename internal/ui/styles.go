@@ -50,7 +50,7 @@ var SidebarHighlight = lipgloss.NewStyle().
 var ContentStyle = lipgloss.NewStyle().
 	Foreground(Primary).
 	Background(MutedBg).
-	Padding(0, 1)
+	Padding(0, 2)
 
 // ContentPageIndicator shows the current page number within a chapter.
 var ContentPageIndicator = lipgloss.NewStyle().
@@ -73,4 +73,30 @@ var PopupPrompt = lipgloss.NewStyle().
 // HelpKeyStyle highlights key names in the footer help text.
 var HelpKeyStyle = lipgloss.NewStyle().
 	Foreground(Accent).
+	Bold(true)
+
+// ChapterModalStyle is the bordered container for the chapter list modal.
+var ChapterModalStyle = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(Accent).
+	Background(PopupBg).
+	Foreground(Highlight).
+	Padding(1, 2)
+
+// ChapterModalTitleStyle is the title bar for the chapter list modal.
+var ChapterModalTitleStyle = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(Accent).
+	Background(PopupBg).
+	Align(lipgloss.Center)
+
+// ChapterListItem styles unselected chapter entries in the modal.
+var ChapterListItem = lipgloss.NewStyle().
+	Foreground(Secondary).
+	Background(PopupBg)
+
+// ChapterListItemHighlight styles the cursor-highlighted chapter in the modal.
+var ChapterListItemHighlight = lipgloss.NewStyle().
+	Foreground(Accent).
+	Background(PopupBg).
 	Bold(true)

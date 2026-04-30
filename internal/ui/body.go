@@ -37,19 +37,25 @@ func BodyView(chapterTitles []string, curChapter int, page domain.Page, showSide
 	return buildContent(page, termWidth, bodyHeight)
 }
 
-// buildSidebar renders the chapter list in the left panel.
-func buildSidebar(titles []string, curChapter, width, height int) string {
-	// Calculate visible range: center the current chapter when possible.
-	half := height / 2
-	start := curChapter - half
+// visibleWindow returns the start and end indices for a centered scrolling
+// viewport of size viewportSize into a list of totalItems, centered on cursor.
+func visibleWindow(totalItems, cursor, viewportSize int) (start, end int) {
+	half := viewportSize / 2
+	start = cursor - half
 	if start < 0 {
 		start = 0
 	}
-	end := start + height
-	if end > len(titles) {
-		end = len(titles)
-		start = max(0, end-height)
+	end = start + viewportSize
+	if end > totalItems {
+		end = totalItems
+		start = max(0, end-viewportSize)
 	}
+	return start, end
+}
+
+// buildSidebar renders the chapter list in the left panel.
+func buildSidebar(titles []string, curChapter, width, height int) string {
+	start, end := visibleWindow(len(titles), curChapter, height)
 
 	var lines []string
 	for i := start; i < end; i++ {
