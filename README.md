@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Seven5y/readx/main/.github/logo.svg" alt="readx" width="120" />
+  <img src="assets/readx_logo.svg" alt="readx" width="120" />
 </p>
 
 <h1 align="center">readx</h1>
