@@ -4,6 +4,7 @@ package ui
 import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"fmt"
 	"os"
@@ -65,6 +66,10 @@ type ReaderModel struct {
 
 	commandMode bool            // true = command input active
 	cmdInput    textinput.Model // command input box
+
+	showConfig   bool // settings panel visible
+	configCursor int  // cursor in settings panel
+	configDirty  bool // true if settings were modified in this session
 
 	ready bool
 
@@ -159,12 +164,17 @@ func (m *ReaderModel) View() string {
 
 	// Popup overlay takes priority.
 	if m.showPopup {
-		return PopupView(m.popupMsg, m.termWidth, m.termHeight)
+		return PopupView(m.popupMsg, m.termWidth, m.termHeight, m.bgColor())
 	}
 
 	// Chapter list modal replaces the screen.
 	if m.showChapters {
-		return ChapterListView(m.chapterTitles, m.chapterCursor, m.termWidth, m.termHeight)
+		return ChapterListView(m.chapterTitles, m.chapterCursor, m.termWidth, m.termHeight, m.bgColor())
+	}
+
+	// Config settings panel.
+	if m.showConfig {
+		return ConfigPanelView(&m.config.Settings, m.configCursor, m.termWidth, m.termHeight, m.bgColor())
 	}
 
 	// Build the main layout.
@@ -174,7 +184,8 @@ func (m *ReaderModel) View() string {
 		chapterTitle = m.chapterTitles[m.curChapter]
 	}
 
-	header := HeaderView(book.Title, chapterTitle, m.termWidth)
+	bgColor := m.bgColor()
+	header := HeaderView(book.Title, chapterTitle, m.termWidth, bgColor)
 
 	// Get current page data.
 	page := domain.Page{
@@ -191,8 +202,8 @@ func (m *ReaderModel) View() string {
 		}
 	}
 
-	body := BodyView(page, m.termWidth, m.termHeight)
-	footer := FooterView(m.curChapter, m.reader.GetTotalChapters(), m.curPage, m.numPages, m.termWidth, m.commandMode, m.cmdInput.View())
+	body := BodyView(page, m.termWidth, m.termHeight, bgColor)
+	footer := FooterView(m.curChapter, m.reader.GetTotalChapters(), m.curPage, m.numPages, m.termWidth, m.commandMode, m.cmdInput.View(), bgColor)
 
 	return header + "\n" + body + "\n" + footer
 }
@@ -219,6 +230,14 @@ func (m *ReaderModel) Cleanup() {
 // ---------------------------------------------------------------------------
 // Key handling
 // ---------------------------------------------------------------------------
+
+// bgColor returns the current background color based on user settings.
+func (m *ReaderModel) bgColor() lipgloss.Color {
+	if m.config != nil && m.config.Settings.BgColor {
+		return MutedBg
+	}
+	return lipgloss.Color("")
+}
 
 // repaginate triggers async pagination for the current chapter.
 func (m *ReaderModel) repaginate() tea.Cmd {
@@ -275,7 +294,32 @@ func (m *ReaderModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Tier 4: Normal reading mode.
+	// Tier 4: Config panel mode.
+	if m.showConfig {
+		switch msg.String() {
+		case "up", "k":
+			if m.configCursor > 0 {
+				m.configCursor--
+			}
+		case "down", "j":
+			if m.configCursor < len(settingsItems)-1 {
+				m.configCursor++
+			}
+		case "enter", " ":
+			settingsItems[m.configCursor].set(&m.config.Settings)
+			m.configDirty = true
+		case "esc", "tab":
+			m.showConfig = false
+			m.configCursor = 0
+			if m.configDirty {
+				_ = persistence.SaveSettings(m.config, m.config.Settings)
+				m.configDirty = false
+			}
+		}
+		return m, nil
+	}
+
+	// Tier 5: Normal reading mode.
 	switch msg.String() {
 
 	case "q":
@@ -312,6 +356,16 @@ func (m *ReaderModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *ReaderModel) executeCommand(input string) (tea.Model, tea.Cmd) {
 	input = strings.TrimSpace(input)
 	switch {
+	case input == "config":
+		m.commandMode = false
+		m.cmdInput.Reset()
+		if m.config == nil {
+			return m, nil
+		}
+		m.showConfig = true
+		m.configCursor = 0
+		return m, nil
+
 	case input == "list":
 		m.Cleanup()
 		return m, func() tea.Msg { return SwitchToLibraryMsg{} }

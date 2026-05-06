@@ -10,7 +10,7 @@ import (
 // FooterView renders the bottom status bar with three columns:
 // left = mode indicator or command input, center = progress bar,
 // right = page number and hints.
-func FooterView(curChapter, totalChapters, curPage, totalPages, termWidth int, commandMode bool, cmdInputView string) string {
+func FooterView(curChapter, totalChapters, curPage, totalPages, termWidth int, commandMode bool, cmdInputView string, bgColor lipgloss.Color) string {
 	if termWidth < 20 {
 		termWidth = 20
 	}
@@ -26,8 +26,8 @@ func FooterView(curChapter, totalChapters, curPage, totalPages, termWidth int, c
 		if inputW < 5 {
 			inputW = 5
 		}
-		leftSide := FooterStyle.Width(inputW).Render(cmdInputView)
-		rightSide := FooterStyle.Align(lipgloss.Right).Render(rightText)
+		leftSide := FooterStyle.Background(bgColor).Width(inputW).Render(cmdInputView)
+		rightSide := FooterStyle.Background(bgColor).Align(lipgloss.Right).Render(rightText)
 		return lipgloss.JoinHorizontal(lipgloss.Top, leftSide, rightSide)
 	}
 
@@ -35,8 +35,8 @@ func FooterView(curChapter, totalChapters, curPage, totalPages, termWidth int, c
 	leftText := "[阅读]  " + bar
 	rightText := fmt.Sprintf("第%d/%d页  tab目录 q退出", curPage+1, totalPages)
 	rightW := lipgloss.Width(rightText)
-	leftSide := FooterStyle.Width(termWidth - rightW).Render(leftText)
-	rightSide := FooterStyle.Align(lipgloss.Right).Render(rightText)
+	leftSide := FooterStyle.Background(bgColor).Width(termWidth - rightW).Render(leftText)
+	rightSide := FooterStyle.Background(bgColor).Align(lipgloss.Right).Render(rightText)
 	return lipgloss.JoinHorizontal(lipgloss.Top, leftSide, rightSide)
 }
 

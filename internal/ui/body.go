@@ -10,7 +10,7 @@ import (
 )
 
 // BodyView renders the main body area: full-width content panel.
-func BodyView(page domain.Page, termWidth, termHeight int) string {
+func BodyView(page domain.Page, termWidth, termHeight int, bgColor lipgloss.Color) string {
 	headerH := 3
 	footerH := 1
 	bodyHeight := termHeight - headerH - footerH
@@ -18,14 +18,14 @@ func BodyView(page domain.Page, termWidth, termHeight int) string {
 		bodyHeight = 3
 	}
 
-	return buildContent(page, termWidth, bodyHeight)
+	return buildContent(page, termWidth, bodyHeight, bgColor)
 }
 
 // buildContent renders the current page text.
-func buildContent(page domain.Page, width, height int) string {
+func buildContent(page domain.Page, width, height int, bgColor lipgloss.Color) string {
 	var contentLines []string
 
-	styledContent := ContentStyle.Width(width)
+	styledContent := ContentStyle.Width(width).Background(bgColor)
 	for _, line := range page.Lines {
 		contentLines = append(contentLines, styledContent.Render(line))
 	}
@@ -40,7 +40,7 @@ func buildContent(page domain.Page, width, height int) string {
 
 	if page.TotalInChapter > 1 {
 		indicator := fmt.Sprintf("— pg %d/%d —", page.PageIndex+1, page.TotalInChapter)
-		indicatorLine := ContentPageIndicator.Width(width).Align(lipgloss.Right).Render(indicator)
+		indicatorLine := ContentPageIndicator.Width(width).Background(bgColor).Align(lipgloss.Right).Render(indicator)
 		if strings.TrimSpace(contentLines[height-1]) == "" {
 			contentLines[height-1] = indicatorLine
 		}

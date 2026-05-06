@@ -13,11 +13,17 @@ import (
 	"readx/internal/domain"
 )
 
+// UserSettings holds user-configurable preferences persisted to disk.
+type UserSettings struct {
+	BgColor bool `json:"bg_color"` // false = terminal default bg, true = dark background
+}
+
 // Config holds reading progress for all books, keyed by book path,
-// and the library shelf of known books.
+// the library shelf, and user settings.
 type Config struct {
 	Progress map[string]domain.ReadingProgress `json:"progress"`
 	Library  []domain.LibraryEntry             `json:"library"`
+	Settings UserSettings                      `json:"settings"`
 }
 
 // configPath returns the full path to the config file.
@@ -183,4 +189,10 @@ func writeConfig(cfg *Config) error {
 		return fmt.Errorf("write config: %w", err)
 	}
 	return nil
+}
+
+// SaveSettings persists user settings to disk.
+func SaveSettings(cfg *Config, s UserSettings) error {
+	cfg.Settings = s
+	return writeConfig(cfg)
 }
