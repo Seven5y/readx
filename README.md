@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/readx_logo.svg" alt="readx" width="120" />
+  <img src="assets/logo.svg" alt="readx" width="120" />
 </p>
 
 <h1 align="center">readx</h1>
