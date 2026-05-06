@@ -82,3 +82,14 @@ var ChapterListItemHighlight = lipgloss.NewStyle().
 	Foreground(Accent).
 	Background(PopupBg).
 	Bold(true)
+
+// LibraryTitleStyle is the title bar for the library shelf.
+var LibraryTitleStyle = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(Accent).
+	Padding(0, 1)
+
+// LibraryHintStyle is for the bottom hint bar in the library view.
+var LibraryHintStyle = lipgloss.NewStyle().
+	Foreground(DimText).
+	Padding(0, 1)

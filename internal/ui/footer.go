@@ -7,23 +7,36 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// FooterView renders the bottom status bar.
-// Left side: key help text. Right side: character-style progress bar.
-func FooterView(currentChapter, totalChapters, currentPage, totalPages int, width int) string {
-	if width < 20 {
-		width = 20
+// FooterView renders the bottom status bar with three columns:
+// left = mode indicator or command input, center = progress bar,
+// right = page number and hints.
+func FooterView(curChapter, totalChapters, curPage, totalPages, termWidth int, commandMode bool, cmdInputView string) string {
+	if termWidth < 20 {
+		termWidth = 20
 	}
 
-	help := "↑/↓翻页  ←/→章节  tab目录  q退出"
+	progress := calcProgress(curChapter, totalChapters, curPage, totalPages)
+	bar := progressBar(progress, 10)
 
-	progress := calcProgress(currentChapter, totalChapters, currentPage, totalPages)
-	rightText := progressBar(progress, 12)
+	if commandMode {
+		// Command mode: left = input, center = hidden, right = hints.
+		rightText := fmt.Sprintf("第%d/%d页  enter执行 esc取消", curPage+1, totalPages)
+		rightW := lipgloss.Width(rightText)
+		inputW := termWidth - rightW
+		if inputW < 5 {
+			inputW = 5
+		}
+		leftSide := FooterStyle.Width(inputW).Render(cmdInputView)
+		rightSide := FooterStyle.Align(lipgloss.Right).Render(rightText)
+		return lipgloss.JoinHorizontal(lipgloss.Top, leftSide, rightSide)
+	}
 
-	// Left-align help, right-align progress bar.
+	// Normal mode: left = indicator + bar, right = page + hints.
+	leftText := "[阅读]  " + bar
+	rightText := fmt.Sprintf("第%d/%d页  tab目录 q退出", curPage+1, totalPages)
 	rightW := lipgloss.Width(rightText)
-	leftSide := FooterStyle.Width(width - rightW).Render(help)
+	leftSide := FooterStyle.Width(termWidth - rightW).Render(leftText)
 	rightSide := FooterStyle.Align(lipgloss.Right).Render(rightText)
-
 	return lipgloss.JoinHorizontal(lipgloss.Top, leftSide, rightSide)
 }
 
@@ -33,11 +46,8 @@ func calcProgress(curCh, totalCh, curPage, totalPages int) int {
 		return 0
 	}
 
-	// Weight: each chapter contributes equally.
 	chapterWeight := 100.0 / float64(totalCh)
 	progress := float64(curCh) * chapterWeight
-
-	// Add partial progress within the current chapter.
 	if totalPages > 0 {
 		progress += chapterWeight * (float64(curPage) / float64(totalPages))
 	}

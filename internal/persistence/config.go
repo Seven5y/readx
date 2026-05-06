@@ -7,14 +7,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"readx/internal/domain"
 )
 
-// Config holds reading progress for all books, keyed by book path.
+// Config holds reading progress for all books, keyed by book path,
+// and the library shelf of known books.
 type Config struct {
 	Progress map[string]domain.ReadingProgress `json:"progress"`
+	Library  []domain.LibraryEntry             `json:"library"`
 }
 
 // configPath returns the full path to the config file.
@@ -96,4 +99,88 @@ func GetProgress(cfg *Config, bookPath string) *domain.ReadingProgress {
 		return nil
 	}
 	return &prog
+}
+
+// AddBook adds or updates a book entry in the library and persists to disk.
+func AddBook(cfg *Config, path string, book *domain.Book) error {
+	entry := domain.LibraryEntry{
+		Path:     path,
+		Title:    book.Title,
+		Author:   book.Author,
+		Format:   book.Format,
+		LastRead: time.Now(),
+	}
+
+	// Merge with existing if present.
+	found := false
+	for i, e := range cfg.Library {
+		if e.Path == path {
+			entry.Progress = e.Progress
+			entry.LastPage = e.LastPage
+			cfg.Library[i] = entry
+			found = true
+			break
+		}
+	}
+	if !found {
+		cfg.Library = append(cfg.Library, entry)
+	}
+
+	return writeConfig(cfg)
+}
+
+// UpdateBookProgress updates the reading progress for a library book entry
+// and persists to disk.
+func UpdateBookProgress(cfg *Config, path string, progress int, curPage int) error {
+	for i, e := range cfg.Library {
+		if e.Path == path {
+			cfg.Library[i].Progress = progress
+			cfg.Library[i].LastPage = curPage
+			cfg.Library[i].LastRead = time.Now()
+			return writeConfig(cfg)
+		}
+	}
+	return nil
+}
+
+// RemoveBook deletes a book entry from the library (does not delete the file).
+func RemoveBook(cfg *Config, path string) error {
+	for i, e := range cfg.Library {
+		if e.Path == path {
+			cfg.Library = append(cfg.Library[:i], cfg.Library[i+1:]...)
+			break
+		}
+	}
+	delete(cfg.Progress, path)
+	return writeConfig(cfg)
+}
+
+// ListBooks returns all library entries sorted by last-read time (newest first).
+func ListBooks(cfg *Config) []domain.LibraryEntry {
+	sorted := make([]domain.LibraryEntry, len(cfg.Library))
+	copy(sorted, cfg.Library)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].LastRead.After(sorted[j].LastRead)
+	})
+	return sorted
+}
+
+// writeConfig serializes and writes the config to disk.
+func writeConfig(cfg *Config) error {
+	configFilePath, err := configPath()
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(configFilePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	if err := os.WriteFile(configFilePath, data, 0644); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+	return nil
 }

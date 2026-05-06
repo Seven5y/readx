@@ -41,3 +41,14 @@ type ReadingProgress struct {
 	PageIndex    int       `json:"page_index"`
 	Timestamp    time.Time `json:"timestamp"`
 }
+
+// LibraryEntry holds metadata for a book in the library shelf.
+type LibraryEntry struct {
+	Path     string    `json:"path"`
+	Title    string    `json:"title"`
+	Author   string    `json:"author"`
+	Format   Format    `json:"format"`
+	Progress int       `json:"progress"`  // 0-100
+	LastPage int       `json:"last_page"` // page index
+	LastRead time.Time `json:"last_read"`
+}

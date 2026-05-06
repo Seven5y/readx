@@ -2,10 +2,13 @@
 package ui
 
 import (
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbletea"
 
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"readx/internal/domain"
 	"readx/internal/persistence"
@@ -44,8 +47,8 @@ type paginateErrMsg struct {
 // Model
 // ---------------------------------------------------------------------------
 
-// Model is the top-level Bubble Tea model for the reader UI.
-type Model struct {
+// ReaderModel is the Bubble Tea model for the reader UI.
+type ReaderModel struct {
 	reader        domain.Reader
 	cache         *service.PageCache
 	chapterTitles []string
@@ -60,6 +63,9 @@ type Model struct {
 	showChapters  bool // chapter list modal visible
 	chapterCursor int  // highlighted chapter index in modal
 
+	commandMode bool            // true = command input active
+	cmdInput    textinput.Model // command input box
+
 	ready bool
 
 	termWidth  int
@@ -70,10 +76,14 @@ type Model struct {
 	bookPath string
 }
 
-// NewModel creates a new reader UI model.
+// NewReaderModel creates a new reader UI model.
 // If savedProgress is non-nil, a "continue reading?" popup will be shown.
-func NewModel(reader domain.Reader, config *persistence.Config, chapterTitles []string, savedProgress *domain.ReadingProgress) *Model {
-	m := &Model{
+func NewReaderModel(reader domain.Reader, config *persistence.Config, chapterTitles []string, savedProgress *domain.ReadingProgress) *ReaderModel {
+	cmdInput := textinput.New()
+	cmdInput.Placeholder = "输入指令..."
+	cmdInput.Prompt = ":"
+
+	m := &ReaderModel{
 		reader:        reader,
 		cache:         service.NewPageCache(),
 		chapterTitles: chapterTitles,
@@ -81,6 +91,7 @@ func NewModel(reader domain.Reader, config *persistence.Config, chapterTitles []
 		curPage:       0,
 		config:        config,
 		bookPath:      reader.GetBook().Path,
+		cmdInput:      cmdInput,
 	}
 
 	if savedProgress != nil {
@@ -99,12 +110,12 @@ func NewModel(reader domain.Reader, config *persistence.Config, chapterTitles []
 
 // Init returns the initial command. Actual pagination is deferred until
 // the first WindowSizeMsg arrives so we have real terminal dimensions.
-func (m *Model) Init() tea.Cmd {
+func (m *ReaderModel) Init() tea.Cmd {
 	return nil
 }
 
 // Update handles incoming messages (key presses, window resize, async results).
-func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *ReaderModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
 	case tea.WindowSizeMsg:
@@ -140,7 +151,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // View renders the full TUI.
-func (m *Model) View() string {
+func (m *ReaderModel) View() string {
 	// Show a "parsing…" placeholder until the first chapter is paginated.
 	if !m.ready {
 		return "正在解析…\n"
@@ -181,13 +192,13 @@ func (m *Model) View() string {
 	}
 
 	body := BodyView(page, m.termWidth, m.termHeight)
-	footer := FooterView(m.curChapter, m.reader.GetTotalChapters(), m.curPage, m.numPages, m.termWidth)
+	footer := FooterView(m.curChapter, m.reader.GetTotalChapters(), m.curPage, m.numPages, m.termWidth, m.commandMode, m.cmdInput.View())
 
 	return header + "\n" + body + "\n" + footer
 }
 
 // Cleanup should be called after the Bubble Tea program exits to persist state.
-func (m *Model) Cleanup() {
+func (m *ReaderModel) Cleanup() {
 	if m.config == nil {
 		return
 	}
@@ -198,6 +209,11 @@ func (m *Model) Cleanup() {
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: save progress: %v\n", err)
 	}
+	// Also update library entry with current progress.
+	prog := calcProgress(m.curChapter, m.reader.GetTotalChapters(), m.curPage, m.numPages)
+	if err := persistence.UpdateBookProgress(m.config, m.bookPath, prog, m.curPage); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: update library progress: %v\n", err)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -205,11 +221,11 @@ func (m *Model) Cleanup() {
 // ---------------------------------------------------------------------------
 
 // repaginate triggers async pagination for the current chapter.
-func (m *Model) repaginate() tea.Cmd {
+func (m *ReaderModel) repaginate() tea.Cmd {
 	return paginateChapterCmd(m.reader, m.cache, m.curChapter, m.termWidth, m.termHeight)
 }
 
-func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *ReaderModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Tier 1: Popup mode — only respond to Y/N.
 	if m.showPopup {
 		switch msg.String() {
@@ -225,7 +241,22 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Tier 2: Chapter list modal mode.
+	// Tier 2: Command mode — enter/esc + textinput.
+	if m.commandMode {
+		switch msg.String() {
+		case "enter":
+			return m.executeCommand(m.cmdInput.Value())
+		case "esc":
+			m.commandMode = false
+			m.cmdInput.Reset()
+		default:
+			var cmd tea.Cmd
+			m.cmdInput, cmd = m.cmdInput.Update(msg)
+			return m, cmd
+		}
+	}
+
+	// Tier 3: Chapter list modal mode.
 	if m.showChapters {
 		switch msg.String() {
 		case "up", "k":
@@ -244,7 +275,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Tier 3: Normal reading mode.
+	// Tier 4: Normal reading mode.
 	switch msg.String() {
 
 	case "q":
@@ -266,14 +297,49 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "tab":
 		m.showChapters = true
 		m.chapterCursor = m.curChapter
+
+	case "/":
+		m.commandMode = true
+		m.cmdInput.Focus()
+		m.cmdInput.SetValue("")
+		return m, nil
 	}
 
 	return m, nil
 }
 
+// executeCommand parses and executes a command from the command input.
+func (m *ReaderModel) executeCommand(input string) (tea.Model, tea.Cmd) {
+	input = strings.TrimSpace(input)
+	switch {
+	case input == "list":
+		m.Cleanup()
+		return m, func() tea.Msg { return SwitchToLibraryMsg{} }
+	case input == "q":
+		m.Cleanup()
+		return m, tea.Quit
+	case strings.HasPrefix(input, "goto "):
+		pageStr := strings.TrimPrefix(input, "goto ")
+		pageNum, err := strconv.Atoi(strings.TrimSpace(pageStr))
+		if err != nil || pageNum < 1 || pageNum > m.numPages {
+			m.commandMode = false
+			m.cmdInput.Reset()
+			return m, nil
+		}
+		m.curPage = pageNum - 1
+		m.commandMode = false
+		m.cmdInput.Reset()
+		return m, nil
+	default:
+		m.commandMode = false
+		m.cmdInput.Reset()
+		return m, nil
+	}
+}
+
 // gotoChapter jumps to the target chapter, resets page to 0, closes the
 // chapter modal, and triggers pagination for the new chapter.
-func (m *Model) gotoChapter(targetChapter int) (tea.Model, tea.Cmd) {
+func (m *ReaderModel) gotoChapter(targetChapter int) (tea.Model, tea.Cmd) {
 	if targetChapter == m.curChapter {
 		m.showChapters = false
 		return m, nil
@@ -288,7 +354,7 @@ func (m *Model) gotoChapter(targetChapter int) (tea.Model, tea.Cmd) {
 // Navigation helpers
 // ---------------------------------------------------------------------------
 
-func (m *Model) prevPage() (tea.Model, tea.Cmd) {
+func (m *ReaderModel) prevPage() (tea.Model, tea.Cmd) {
 	if m.curPage > 0 {
 		m.curPage--
 		return m, nil
@@ -303,7 +369,7 @@ func (m *Model) prevPage() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) nextPage() (tea.Model, tea.Cmd) {
+func (m *ReaderModel) nextPage() (tea.Model, tea.Cmd) {
 	if m.curPage < m.numPages-1 {
 		m.curPage++
 		return m, nil
@@ -319,7 +385,7 @@ func (m *Model) nextPage() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) prevChapter() (tea.Model, tea.Cmd) {
+func (m *ReaderModel) prevChapter() (tea.Model, tea.Cmd) {
 	if m.curChapter > 0 {
 		m.curChapter--
 		m.curPage = 0
@@ -328,7 +394,7 @@ func (m *Model) prevChapter() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) nextChapter() (tea.Model, tea.Cmd) {
+func (m *ReaderModel) nextChapter() (tea.Model, tea.Cmd) {
 	if m.curChapter < m.reader.GetTotalChapters()-1 {
 		m.curChapter++
 		m.curPage = 0
