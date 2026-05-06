@@ -108,7 +108,7 @@ func renderListModal(title string, items []string, cursor, width, height int, bg
 	}
 
 	normalStyle := ChapterListItem.Background(bgColor)
-	highlightStyle := ChapterListItemHighlight.Background(bgColor)
+	highlightStyle := ChapterListItemHighlight.Background(PopupBg)
 
 	start, end := visibleWindow(len(items), cursor, viewportH)
 

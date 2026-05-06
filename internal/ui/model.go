@@ -305,16 +305,20 @@ func (m *ReaderModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.configCursor < len(settingsItems)-1 {
 				m.configCursor++
 			}
-		case "enter", " ":
+		case "left", "h", "right", "l":
 			settingsItems[m.configCursor].set(&m.config.Settings)
 			m.configDirty = true
-		case "esc", "tab":
+		case "enter":
 			m.showConfig = false
 			m.configCursor = 0
 			if m.configDirty {
 				_ = persistence.SaveSettings(m.config, m.config.Settings)
 				m.configDirty = false
 			}
+		case "esc", "tab":
+			m.showConfig = false
+			m.configCursor = 0
+			m.configDirty = false
 		}
 		return m, nil
 	}
