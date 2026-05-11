@@ -2,14 +2,15 @@
 package ui
 
 import (
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-
+	"context"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"readx/internal/domain"
 	"readx/internal/persistence"
@@ -44,6 +45,67 @@ type paginateErrMsg struct {
 	err error
 }
 
+const maxSearchResults = 200
+
+type searchDoneMsg struct {
+	query   string
+	results []domain.SearchResult
+	capped  bool
+	err     error
+}
+
+type searchFocusType int
+
+const (
+	searchFocusInput searchFocusType = iota
+	searchFocusList
+)
+
+func searchBookCmd(ctx context.Context, reader domain.Reader, chapterTitles []string, query string, termW, termH int, maxResults int) tea.Cmd {
+	return func() tea.Msg {
+		lowerQuery := strings.ToLower(query)
+		totalChapters := reader.GetTotalChapters()
+		results := make([]domain.SearchResult, 0)
+
+		for chIdx := 0; chIdx < totalChapters; chIdx++ {
+			select {
+			case <-ctx.Done():
+				return searchDoneMsg{query: query}
+			default:
+			}
+
+			ch, err := reader.GetChapter(chIdx)
+			if err != nil {
+				continue
+			}
+			pages := service.Paginate(ch, termW, termH)
+
+			title := ""
+			if chIdx < len(chapterTitles) {
+				title = chapterTitles[chIdx]
+			}
+			for _, page := range pages {
+				for lineIdx, line := range page.Lines {
+					if strings.Contains(strings.ToLower(line), lowerQuery) {
+						results = append(results, domain.SearchResult{
+							ChapterIndex: chIdx,
+							ChapterTitle: title,
+							PageIndex:    page.PageIndex,
+							LineIndex:    lineIdx,
+							LineContent:  line,
+						})
+						if len(results) >= maxResults {
+							return searchDoneMsg{query: query, results: results, capped: true}
+						}
+					}
+				}
+			}
+		}
+
+		return searchDoneMsg{query: query, results: results}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Model
 // ---------------------------------------------------------------------------
@@ -71,6 +133,16 @@ type ReaderModel struct {
 	configCursor int  // cursor in settings panel
 	configDirty  bool // true if settings were modified in this session
 
+	showSearch      bool
+	searchInput     textinput.Model
+	searchResults   []domain.SearchResult
+	searchCursor    int
+	searchQuery     string
+	searchLoading   bool
+	searchTruncated bool
+	searchFocus     searchFocusType
+	searchCancel    context.CancelFunc
+
 	ready bool
 
 	termWidth  int
@@ -88,6 +160,14 @@ func NewReaderModel(reader domain.Reader, config *persistence.Config, chapterTit
 	cmdInput.Placeholder = "输入指令..."
 	cmdInput.Prompt = ":"
 
+	searchInput := textinput.New()
+	searchInput.Placeholder = "输入关键词..."
+	searchInput.Prompt = "搜索: "
+	searchInput.TextStyle = lipgloss.NewStyle().Foreground(Primary)
+	searchInput.PlaceholderStyle = lipgloss.NewStyle().Foreground(DimText)
+	searchInput.PromptStyle = lipgloss.NewStyle().Foreground(Accent)
+	searchInput.Cursor.Style = lipgloss.NewStyle().Foreground(Accent)
+
 	m := &ReaderModel{
 		reader:        reader,
 		cache:         service.NewPageCache(),
@@ -97,6 +177,8 @@ func NewReaderModel(reader domain.Reader, config *persistence.Config, chapterTit
 		config:        config,
 		bookPath:      reader.GetBook().Path,
 		cmdInput:      cmdInput,
+		searchInput: searchInput,
+		searchFocus: searchFocusInput,
 	}
 
 	if savedProgress != nil {
@@ -148,6 +230,24 @@ func (m *ReaderModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		fmt.Fprintf(os.Stderr, "Pagination error: %v\n", msg.err)
 		return m, nil
 
+	case searchDoneMsg:
+		m.searchLoading = false
+		m.searchCancel = nil
+		if msg.err != nil {
+			return m, nil
+		}
+		if msg.query == m.searchQuery {
+			m.searchResults = msg.results
+			m.searchTruncated = msg.capped
+			if len(m.searchResults) > 0 {
+				m.searchFocus = searchFocusList
+				m.searchCursor = 0
+			} else {
+				m.searchFocus = searchFocusInput
+			}
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -165,6 +265,11 @@ func (m *ReaderModel) View() string {
 	// Popup overlay takes priority.
 	if m.showPopup {
 		return PopupView(m.popupMsg, m.termWidth, m.termHeight, m.bgColor())
+	}
+
+	if m.showSearch {
+		return SearchView(m.searchInput.View(), m.searchResults, m.searchCursor,
+			m.searchLoading, m.searchTruncated, m.termWidth, m.termHeight, m.bgColor())
 	}
 
 	// Chapter list modal replaces the screen.
@@ -202,7 +307,7 @@ func (m *ReaderModel) View() string {
 		}
 	}
 
-	body := BodyView(page, m.termWidth, m.termHeight, bgColor)
+	body := BodyView(page, m.termWidth, m.termHeight, bgColor, m.searchQuery)
 	footer := FooterView(m.curChapter, m.reader.GetTotalChapters(), m.curPage, m.numPages, m.termWidth, m.commandMode, m.cmdInput.View(), bgColor)
 
 	return header + "\n" + body + "\n" + footer
@@ -245,7 +350,7 @@ func (m *ReaderModel) repaginate() tea.Cmd {
 }
 
 func (m *ReaderModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Tier 1: Popup mode — only respond to Y/N.
+	// Popup mode.
 	if m.showPopup {
 		switch msg.String() {
 		case "y", "Y":
@@ -260,7 +365,7 @@ func (m *ReaderModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Tier 2: Command mode — enter/esc + textinput.
+	// Command mode.
 	if m.commandMode {
 		switch msg.String() {
 		case "enter":
@@ -275,7 +380,65 @@ func (m *ReaderModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Tier 3: Chapter list modal mode.
+	// Search mode.
+	if m.showSearch {
+		switch m.searchFocus {
+		case searchFocusInput:
+			switch msg.String() {
+			case "enter":
+				if m.searchLoading {
+					return m, nil
+				}
+				query := strings.TrimSpace(m.searchInput.Value())
+				if query == "" {
+					return m, nil
+				}
+				m.searchQuery = query
+				m.searchLoading = true
+				return m, m.startSearch(query)
+			case "esc":
+				m.showSearch = false
+				m.cancelSearch()
+				return m, nil
+			case "ctrl+l":
+				m.clearSearch()
+				return m, nil
+			default:
+				var cmd tea.Cmd
+				m.searchInput, cmd = m.searchInput.Update(msg)
+				return m, cmd
+			}
+
+		case searchFocusList:
+			switch msg.String() {
+			case "up", "k":
+				if m.searchCursor > 0 {
+					m.searchCursor--
+				}
+			case "down", "j":
+				if m.searchCursor < len(m.searchResults)-1 {
+					m.searchCursor++
+				}
+			case "enter":
+				return m.gotoSearchResult(m.searchResults[m.searchCursor])
+			case "esc":
+				m.showSearch = false
+				m.cancelSearch()
+				return m, nil
+			case "/":
+				m.searchFocus = searchFocusInput
+				m.searchInput.Focus()
+				return m, nil
+			case "ctrl+l":
+				m.clearSearch()
+				m.searchFocus = searchFocusInput
+				return m, nil
+			}
+		}
+		return m, nil
+	}
+
+	// Chapter list modal mode.
 	if m.showChapters {
 		switch msg.String() {
 		case "up", "k":
@@ -294,7 +457,7 @@ func (m *ReaderModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Tier 4: Config panel mode.
+	// Config panel mode.
 	if m.showConfig {
 		switch msg.String() {
 		case "up", "k":
@@ -323,7 +486,7 @@ func (m *ReaderModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Tier 5: Normal reading mode.
+	// Normal reading mode.
 	switch msg.String() {
 
 	case "q":
@@ -373,6 +536,14 @@ func (m *ReaderModel) executeCommand(input string) (tea.Model, tea.Cmd) {
 	case input == "list":
 		m.Cleanup()
 		return m, func() tea.Msg { return SwitchToLibraryMsg{} }
+	case input == "search":
+		m.commandMode = false
+		m.cmdInput.Reset()
+		m.showSearch = true
+		m.searchInput.SetValue(m.searchQuery)
+		m.searchInput.Focus()
+		m.searchFocus = searchFocusInput
+		return m, nil
 	case input == "q":
 		m.Cleanup()
 		return m, tea.Quit
@@ -395,8 +566,40 @@ func (m *ReaderModel) executeCommand(input string) (tea.Model, tea.Cmd) {
 	}
 }
 
-// gotoChapter jumps to the target chapter, resets page to 0, closes the
-// chapter modal, and triggers pagination for the new chapter.
+func (m *ReaderModel) clearSearch() {
+	m.searchResults = nil
+	m.searchQuery = ""
+	m.searchCursor = 0
+	m.searchTruncated = false
+	m.searchInput.Reset()
+}
+
+func (m *ReaderModel) cancelSearch() {
+	if m.searchCancel != nil {
+		m.searchCancel()
+		m.searchCancel = nil
+	}
+	m.searchLoading = false
+}
+
+func (m *ReaderModel) startSearch(query string) tea.Cmd {
+	m.cancelSearch()
+	ctx, cancel := context.WithCancel(context.Background())
+	m.searchCancel = cancel
+	return searchBookCmd(ctx, m.reader, m.chapterTitles, query, m.termWidth, m.termHeight, maxSearchResults)
+}
+
+func (m *ReaderModel) gotoSearchResult(result domain.SearchResult) (tea.Model, tea.Cmd) {
+	m.showSearch = false
+	if result.ChapterIndex != m.curChapter {
+		m.curChapter = result.ChapterIndex
+		m.curPage = result.PageIndex
+		return m, m.repaginate()
+	}
+	m.curPage = result.PageIndex
+	return m, nil
+}
+
 func (m *ReaderModel) gotoChapter(targetChapter int) (tea.Model, tea.Cmd) {
 	if targetChapter == m.curChapter {
 		m.showChapters = false

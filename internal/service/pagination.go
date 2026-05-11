@@ -4,6 +4,7 @@ package service
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/mattn/go-runewidth"
 
@@ -18,10 +19,10 @@ const (
 // PageCache caches paginated results for current and adjacent chapters
 // to avoid holding the entire book's pagination in memory.
 type PageCache struct {
+	mu    sync.RWMutex
 	pages map[int][]domain.Page // chapter index → pages
 }
 
-// NewPageCache creates a pagination cache.
 func NewPageCache() *PageCache {
 	return &PageCache{
 		pages: make(map[int][]domain.Page),
@@ -30,16 +31,22 @@ func NewPageCache() *PageCache {
 
 // Get returns the cached pages for a chapter, or nil if not cached.
 func (pc *PageCache) Get(chapterIndex int) []domain.Page {
+	pc.mu.RLock()
+	defer pc.mu.RUnlock()
 	return pc.pages[chapterIndex]
 }
 
 // Set stores paginated pages for a chapter.
 func (pc *PageCache) Set(chapterIndex int, pages []domain.Page) {
+	pc.mu.Lock()
+	defer pc.mu.Unlock()
 	pc.pages[chapterIndex] = pages
 }
 
 // EvictExcept removes all cached entries except the given indices.
 func (pc *PageCache) EvictExcept(keep ...int) {
+	pc.mu.Lock()
+	defer pc.mu.Unlock()
 	keepSet := make(map[int]bool, len(keep))
 	for _, k := range keep {
 		keepSet[k] = true

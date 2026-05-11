@@ -93,3 +93,30 @@ var LibraryTitleStyle = lipgloss.NewStyle().
 var LibraryHintStyle = lipgloss.NewStyle().
 	Foreground(DimText).
 	Padding(0, 1)
+
+// SearchInputStyle wraps the search keyword input inside the search modal.
+var SearchInputStyle = lipgloss.NewStyle().
+	Foreground(Primary).
+	Background(PopupBg)
+
+// SearchResultNormal styles unselected search result lines.
+var SearchResultNormal = lipgloss.NewStyle().
+	Foreground(Secondary).
+	Background(PopupBg)
+
+// SearchResultHighlight styles the cursor-highlighted search result.
+var SearchResultHighlight = lipgloss.NewStyle().
+	Foreground(Accent).
+	Background(PopupBg).
+	Bold(true)
+
+// SearchGroupHeader styles chapter grouping headers in search results.
+var SearchGroupHeader = lipgloss.NewStyle().
+	Foreground(Accent).
+	Background(PopupBg).
+	Bold(true)
+
+// SearchStatusMessage styles loading / no-results / truncated messages.
+var SearchStatusMessage = lipgloss.NewStyle().
+	Foreground(DimText).
+	Background(PopupBg)

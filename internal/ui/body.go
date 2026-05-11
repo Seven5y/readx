@@ -10,7 +10,7 @@ import (
 )
 
 // BodyView renders the main body area: full-width content panel.
-func BodyView(page domain.Page, termWidth, termHeight int, bgColor lipgloss.Color) string {
+func BodyView(page domain.Page, termWidth, termHeight int, bgColor lipgloss.Color, searchQuery string) string {
 	headerH := 3
 	footerH := 1
 	bodyHeight := termHeight - headerH - footerH
@@ -18,16 +18,24 @@ func BodyView(page domain.Page, termWidth, termHeight int, bgColor lipgloss.Colo
 		bodyHeight = 3
 	}
 
-	return buildContent(page, termWidth, bodyHeight, bgColor)
+	return buildContent(page, termWidth, bodyHeight, bgColor, searchQuery)
 }
 
 // buildContent renders the current page text.
-func buildContent(page domain.Page, width, height int, bgColor lipgloss.Color) string {
+func buildContent(page domain.Page, width, height int, bgColor lipgloss.Color, searchQuery string) string {
 	var contentLines []string
 
-	styledContent := ContentStyle.Width(width).Background(bgColor)
+	baseContent := ContentStyle.Width(width).Background(bgColor)
+	styledContent := baseContent
+	accentContent := baseContent.Foreground(Accent)
+	lowerQuery := strings.ToLower(searchQuery)
+
 	for _, line := range page.Lines {
-		contentLines = append(contentLines, styledContent.Render(line))
+		if searchQuery != "" && strings.Contains(strings.ToLower(line), lowerQuery) {
+			contentLines = append(contentLines, accentContent.Render(line))
+		} else {
+			contentLines = append(contentLines, styledContent.Render(line))
+		}
 	}
 
 	for len(contentLines) < height {

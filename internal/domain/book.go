@@ -34,6 +34,14 @@ type Page struct {
 	TotalInChapter int     // total pages in this chapter
 }
 
+type SearchResult struct {
+	ChapterIndex int
+	ChapterTitle string
+	PageIndex    int
+	LineIndex    int
+	LineContent  string
+}
+
 // ReadingProgress records the last reading position for a book.
 type ReadingProgress struct {
 	BookPath     string    `json:"book_path"`
